@@ -1,0 +1,155 @@
+---
+
+# ---- Basic configuration options ----
+
+# Should phpipam role manage it's own dependencies?
+librenms_dependencies: True
+
+# Domain on which phpIPAM is configured in nginx
+librenms_domain: [ 'nms.{{ ansible_domain }}' ]
+
+librenms_nginx_auth_realm: 'IPAM access is restricted'
+librenms_nginx_access_policy: ''
+
+
+# ---- User, group, database configuration ----
+
+# System user and group for phpIPAM application
+librenms_user: 'librenms'
+librenms_group: 'librenms'
+librenms_shell: '/bin/bash'
+
+librenms_home: '{{ (ansible_local.nginx.www
+	            if (ansible_local|d() and ansible_local.nginx|d() and
+	                ansible_local.nginx.www|d())
+	            else "/srv/www") + "/" + librenms_user }}'
+
+librenms_install_path: '{{ librenms_home + "/sites/public" }}'
+
+# phpIPAM source repository
+librenms_install_repo: 'https://github.com/librenms/librenms.git'
+
+# phpIPAM git branch to deploy
+librenms_install_version: 'master'
+
+# phpIPAM MySQL database configuration
+librenms_database_server: '{{ ansible_local.mariadb.server }}'
+librenms_database_user: 'librenms'
+librenms_database_name: 'librenms'
+librenms_database_password: "{{ lookup('password', secret + '/mariadb/' + ansible_local.mariadb.delegate_to + '/credentials/' + librenms_database_user + '/password length=48') }}"
+
+# List of FQDN hostnames of hosts to add to LibreNMS
+librenms_devices: []
+
+
+# phpIPAM webserver user (needs read-only access to the website code)
+librenms_webserver_user: '{{ ansible_local.nginx.user if (ansible_local is defined and ansible_local.nginx is defined and ansible_local.nginx.user is defined) else "www-data" }}'
+
+librenms_admin_accounts: [ '{{ ansible_ssh_user if ansible_ssh_user != "root" else lookup("env", "USER") }}' ]
+
+librenms_initial_hosts: [ '{{ librenms_own_hostname }}' ]
+
+librenms_home_snmp_conf: '{{ ([ "root", librenms_user ] + librenms_admin_accounts|d([])) | unique }}'
+
+librenms_cron_threads: '{{ (ansible_processor_cores | int * 4) }}'
+
+librenms_memcached_enable: False
+librenms_memcached_host: 'localhost'
+
+librenms_rrd_dir: '{{ (ansible_local.root.var
+                       if (ansible_local|d() and ansible_local.root|d()
+                           and ansible_local.root.var|d())
+                       else "/var/local") + "/" + librenms_user + "/rrd" }}'
+
+librenms_configuration_maps:
+  - '{{ librenms_config_database }}'
+  - '{{ librenms_config_authentication }}'
+  - '{{ librenms_config_memcached }}'
+  - '{{ librenms_config_installation }}'
+  - '{{ librenms_config_general }}'
+  - '{{ librenms_config_snmp }}'
+  - '{{ librenms_config_mounts }}'
+  - '{{ librenms_config_poller }}'
+  - '{{ librenms_config_update }}'
+
+librenms_config_database:
+  comment: 'Database configuration'
+  'db_host': '{{ librenms_database_server }}'
+  'db_name': '{{ librenms_database_name }}'
+  'db_user': '{{ librenms_database_user }}'
+  'db_pass': '{{ librenms_database_password }}'
+
+librenms_config_authentication:
+  comment: 'Authentication configuration'
+  'auth_mechanism': 'mysql'
+
+librenms_config_installation:
+  comment: 'Application location, configuration paths'
+  'install_dir': '{{ librenms_install_path }}'
+
+librenms_config_memcached:
+  comment: 'Memcached configuration'
+  'memcached':
+    'enable': '{{ librenms_fact_memcached_enable | default(librenms_memcached_enable) }}'
+    'host':   '{{ librenms_memcached_host }}'
+    'port':   11211
+
+librenms_config_general:
+  comment: 'General configuration'
+  'own_hostname':      '{{ librenms_own_hostname }}'
+  'site_style':        '{{ librenms_site_style }}'
+  'front_page':        '{{ librenms_front_page }}'
+  'public_status':     '{{ librenms_public_status }}'
+  'discover_services': '{{ librenms_discover_services }}'
+  'nets':              '{{ librenms_autodiscover_networks }}'
+  'auth_ldap_groups':
+    'admin':
+      'level': 7
+
+librenms_config_snmp:
+  comment: 'SNMP configuration'
+  array: True
+  'snmp':
+    'version': '{{ librenms_snmp_version }}'
+    'community': '{{ librenms_snmp_communities }}'
+    'v3': '{{ librenms_snmp_credentials }}'
+
+librenms_own_hostname: '{{ ansible_fqdn }}'
+librenms_site_style: 'light'
+
+librenms_front_page: 'pages/front/default.php'
+
+librenms_public_status: False
+
+librenms_discover_services: False
+
+librenms_snmp_version: 'v3'
+
+librenms_snmp_communities: [ 'public' ]
+
+librenms_snmp_credentials: [ '{{ librenms_snmp_credentials_default }}' ]
+
+librenms_snmp_credentials_default:
+  authlevel: 'authPriv'
+  authalgo: 'SHA'
+  cryptoalgo: 'AES'
+  authname: '{{ lookup("password", secret + "/snmp/credentials/agent/username") }}'
+  authpass: '{{ lookup("password", secret + "/snmp/credentials/agent/password") }}'
+  cryptopass: '{{ lookup("password", secret + "/snmp/credentials/agent/password") }}'
+
+librenms_autodiscover_networks: [ '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16' ]
+
+
+librenms_config_mounts:
+  comment: 'List of mount points to ignore'
+  'ignore_mount_string': [ 'cgroup', '/run/', '/dev/shm' ]
+
+librenms_config_update:
+  comment: 'Automatically update LibreNMS installation'
+  'update': 1
+
+librenms_config_poller:
+  comment: 'This is necessary for poller-wrapper'
+  'poller-wrapper':
+    'alerter': 'False'
+
